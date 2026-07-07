@@ -1,4 +1,4 @@
-const API_URL = "";
+const API_URL = "https://script.google.com/macros/s/AKfycbydhkhJcas_Bom4xQWhw2tKiUWtn9WqDGQiqoHq3P2wz24_cFRZbVcu-mfYhE_SjWxCOw/exec";
 
 let books = [];
 let progress = {};
