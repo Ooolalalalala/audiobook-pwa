@@ -1,1 +1,136 @@
+* {
+  box-sizing: border-box;
+}
 
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: #111;
+  color: #eee;
+}
+
+header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  background: #1c1c1c;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+h1, h2, h3, p {
+  margin: 0 0 10px 0;
+}
+
+main {
+  padding: 16px;
+  max-width: 900px;
+  margin: auto;
+}
+
+button, select {
+  padding: 10px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #333;
+  color: #fff;
+  font-size: 15px;
+  margin: 4px;
+}
+
+button:active {
+  transform: scale(0.98);
+}
+
+.book {
+  display: flex;
+  gap: 14px;
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #1f1f1f;
+  border-radius: 12px;
+  cursor: pointer;
+}
+
+.book img,
+#cover {
+  width: 90px;
+  height: 130px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #333;
+}
+
+.noCover {
+  width: 90px;
+  height: 130px;
+  border-radius: 8px;
+  background: #333;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #aaa;
+  font-size: 12px;
+  text-align: center;
+}
+
+#playerBox {
+  margin-top: 24px;
+  padding: 16px;
+  background: #1c1c1c;
+  border-radius: 12px;
+}
+
+#cover {
+  margin-bottom: 12px;
+}
+
+audio {
+  width: 100%;
+  margin: 12px 0;
+}
+
+.controls,
+.download {
+  margin: 12px 0;
+}
+
+#chapters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+#chapters button {
+  text-align: left;
+}
+
+#chapters button.active {
+  background: #555;
+}
+
+.hidden {
+  display: none;
+}
+
+@media (max-width: 600px) {
+  header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .book img,
+  #cover,
+  .noCover {
+    width: 70px;
+    height: 100px;
+  }
+
+  button, select {
+    width: 100%;
+    margin: 4px 0;
+  }
+}
