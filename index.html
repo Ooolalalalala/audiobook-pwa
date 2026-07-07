@@ -1,1 +1,59 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <title>Audiobook PWA</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>Audiobooks</h1>
+    <button id="refreshBtn">Обновить</button>
+  </header>
 
+  <main>
+    <section id="books"></section>
+
+    <section id="playerBox" class="hidden">
+      <img id="cover" alt="cover">
+      <h2 id="bookTitle"></h2>
+      <p id="chapterTitle"></p>
+
+      <audio id="audio" controls></audio>
+
+      <div class="controls">
+        <button id="prevBtn">⏮</button>
+        <button id="backBtn">-20 сек</button>
+        <button id="forwardBtn">+20 сек</button>
+        <button id="nextBtn">⏭</button>
+      </div>
+
+      <label>
+        Скорость:
+        <select id="speed">
+          <option value="0.75">0.75x</option>
+          <option value="1">1x</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="1.75">1.75x</option>
+          <option value="2">2x</option>
+          <option value="2.5">2.5x</option>
+          <option value="3">3x</option>
+        </select>
+      </label>
+
+      <div class="download">
+        <button id="downloadFileBtn">Скачать файл</button>
+        <button id="downloadBookBtn">Скачать книгу</button>
+      </div>
+
+      <h3>Файлы</h3>
+      <div id="chapters"></div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
