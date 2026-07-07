@@ -46,7 +46,6 @@ if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("service-worker.js");
 }
 
-// Инициализация базы данных IndexedDB для офлайн-хранения
 function initDB() {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open("AudiobooksOfflineDB", 1);
@@ -64,7 +63,6 @@ function initDB() {
   });
 }
 
-// Сохранение Blob файла в IndexedDB
 function saveFileToStorage(id, blob) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readwrite");
@@ -75,7 +73,6 @@ function saveFileToStorage(id, blob) {
   });
 }
 
-// Получение Blob файла из IndexedDB
 function getFileFromStorage(id) {
   return new Promise((resolve, reject) => {
     const tx = db.transaction("files", "readonly");
@@ -84,6 +81,25 @@ function getFileFromStorage(id) {
     request.onsuccess = () => resolve(request.result ? request.result.blob : null);
     request.onerror = e => reject(e.target.error);
   });
+}
+
+// Конвертер Base64 в Blob
+function base64ToBlob(base64, mimeType) {
+  const byteCharacters = atob(base64);
+  const byteNumbers = new Array(byteCharacters.length);
+  for (let i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  const byteArray = new Uint8Array(byteNumbers);
+  return new Blob([byteArray], { type: mimeType });
+}
+
+// Вспомогательная функция для скачивания файла по сети и конвертации
+async function fetchFileAsBlob(url) {
+  const res = await fetch(url);
+  const data = await res.json();
+  if (!data.ok) throw new Error(data.error || "Ошибка загрузки файла с сервера");
+  return base64ToBlob(data.bytes, data.mimeType);
 }
 
 async function init() {
@@ -103,7 +119,6 @@ async function refresh() {
       localStorage.setItem("audiobook_cache_books", JSON.stringify(books));
     }
   } catch (e) {
-    console.log("Офлайн-режим: загрузка книг из локального кэша");
     books = JSON.parse(localStorage.getItem("audiobook_cache_books") || "[]");
   }
 
@@ -113,7 +128,7 @@ async function refresh() {
       progress = mergeProgress(progress, progressData.progress);
     }
   } catch (e) {
-    console.log("Офлайн-режим: синхронизация прогресса отложена");
+    console.log("Офлайн: прогресс не синхронизирован");
   }
 
   renderBooks();
@@ -125,7 +140,7 @@ function renderBooks() {
     const div = document.createElement("div");
     div.className = "book";
     div.innerHTML = `
-      ${book.cover ? `<img src="${book.cover}" alt="" data-id="${book.id}">` : `<div class="noCover">Нет обложки</div>`}
+      ${book.cover ? `<img src="" alt="" data-id="${book.id}">` : `<div class="noCover">Нет обложки</div>`}
       <div>
         <h2>${escapeHtml(book.title)}</h2>
         <p>${book.chapters.length} файлов</p>
@@ -134,7 +149,6 @@ function renderBooks() {
     div.onclick = () => openBook(book.id);
     booksBox.appendChild(div);
 
-    // Ленивая загрузка обложек через Blob (защита от CORS)
     if (book.cover) {
       loadCoverImage(book.id, book.cover);
     }
@@ -145,14 +159,13 @@ async function loadCoverImage(bookId, coverUrl) {
   try {
     let blob = await getFileFromStorage(bookId);
     if (!blob) {
-      const res = await fetch(coverUrl);
-      blob = await res.blob();
+      blob = await fetchFileAsBlob(coverUrl);
       await saveFileToStorage(bookId, blob);
     }
     const imgEl = document.querySelector(`img[data-id="${bookId}"]`);
     if (imgEl) imgEl.src = URL.createObjectURL(blob);
   } catch (e) {
-    console.error("Ошибка загрузки обложки", e);
+    console.error(e);
   }
 }
 
@@ -173,13 +186,11 @@ function openBook(bookId) {
 
   playerBox.classList.remove("hidden");
   
-  // Ставим временную обложку, пока грузится сохраненная из базы
   getFileFromStorage(currentBook.id).then(blob => {
     if (blob) cover.src = URL.createObjectURL(blob);
   });
 
   bookTitle.textContent = currentBook.title;
-
   renderChapters();
   loadChapter(currentChapterIndex, true);
 }
@@ -206,8 +217,7 @@ async function loadChapter(index, restorePosition) {
     let blob = await getFileFromStorage(chapter.id);
     
     if (!blob) {
-      const response = await fetch(chapter.url);
-      blob = await response.blob();
+      blob = await fetchFileAsBlob(chapter.url);
     }
 
     audio.src = URL.createObjectURL(blob);
@@ -274,7 +284,7 @@ async function saveCurrentProgress() {
   try {
     await api("saveProgress", progress);
   } catch (e) {
-    console.error("Не удалось синхронизировать прогресс с сервером", e);
+    console.error(e);
   }
 }
 
@@ -311,8 +321,7 @@ async function downloadCurrentFile() {
   try {
     let blob = await getFileFromStorage(chapter.id);
     if (!blob) {
-      const res = await fetch(chapter.url);
-      blob = await res.blob();
+      blob = await fetchFileAsBlob(chapter.url);
       await saveFileToStorage(chapter.id, blob);
     }
     btn.textContent = "Готово (Офлайн)";
@@ -334,31 +343,26 @@ async function downloadCurrentBook() {
     try {
       let blob = await getFileFromStorage(chapter.id);
       if (!blob) {
-        const res = await fetch(chapter.url);
-        blob = await res.blob();
+        blob = await fetchFileAsBlob(chapter.url);
         await saveFileToStorage(chapter.id, blob);
       }
     } catch (e) {
-      console.error("Ошибка при скачивании главы книги", e);
+      console.error(e);
     }
   }
   btn.textContent = "Вся книга в офлайне!";
   setTimeout(() => btn.textContent = originalText, 3000);
 }
 
-// Универсальный метод fetch для GET и POST (Замена устаревшего JSONP)
 async function api(action, bodyData = null) {
   const url = new URL(API_URL);
-  
   if (bodyData) {
-    // Если переданы данные — выполняем POST (для сохранения прогресса)
     const response = await fetch(url.toString(), {
       method: "POST",
       body: JSON.stringify(bodyData)
     });
     return await response.json();
   } else {
-    // Если данных нет — выполняем GET (для книг и загрузки прогресса)
     url.searchParams.set("action", action);
     const response = await fetch(url.toString());
     return await response.json();
