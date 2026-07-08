@@ -42,7 +42,6 @@ async function initLibrary() {
       return;
     }
     
-    // Безопасно сохраняем токен авторизации, пришедший от Google скрипта
     if (data.token) {
       window.AUTH_TOKEN_DYNAMIC = data.token;
     }
@@ -121,7 +120,7 @@ async function renderLibrary(books) {
   });
 }
 
-// СКАЧИВАНИЕ КНИГИ В ОФЛАЙН КЭШ С ИСПОЛЬЗОВАНИЕМ ДИНАМИЧЕСКОГО ТОКЕНА
+// СКАЧИВАНИЕ КНИГИ В ОФЛАЙН КЭШ
 async function downloadWholeBook(book, buttonElement) {
   if (buttonElement.classList.contains('downloaded')) return;
   buttonElement.innerText = 'Скачивание...';
@@ -147,13 +146,17 @@ async function downloadWholeBook(book, buttonElement) {
 // ЗАГРУЗКА ОБЛОЖКИ КНИГИ
 async function loadSecureCover(fileId, elementId) {
   const container = document.getElementById(elementId);
+  if (!container) return;
   try {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
       headers: { 'Authorization': `Bearer ${window.AUTH_TOKEN_DYNAMIC}` }
     });
+    if (!res.ok) throw new Error('Cover load failed');
     const blob = await res.blob();
     container.innerHTML = `<img src="${URL.createObjectURL(blob)}" style="width:100%;height:100%;object-fit:cover;" />`;
-  } catch (e) { container.innerText = '📕'; }
+  } catch (e) { 
+    container.innerHTML = '<div style="font-size:30px;display:flex;align-items:center;justify-content:center;width:100%;height:100%;background:#e5e5ea;">📘</div>'; 
+  }
 }
 
 // БЕЗОПАСНЫЙ ЗАПУСК АУДИО БЕЗ ABORT_ERROR
@@ -175,9 +178,9 @@ async function playTrack(trackId, bookTitle, trackName) {
   document.getElementById('current-title').innerText = bookTitle;
   document.getElementById('current-track-name').innerText = trackName;
 
-  // Сброс и жесткая остановка старого воспроизведения во избежание AbortError
   audio.pause();
-  audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&bearer_token=${window.AUTH_TOKEN_DYNAMIC}`;
+  // ИСПРАВЛЕНО: Передаем токен через параметр token для перехвата Service Worker'ом
+  audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&token=${window.AUTH_TOKEN_DYNAMIC}`;
   audio.load();
   
   syncStatus.innerText = 'Синхронизация...';
