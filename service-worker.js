@@ -5,17 +5,21 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
-  // Перехватываем запросы к Диску, содержащие наш токен
+
+  // ЖЕСТКОЕ ИСКЛЮЧЕНИЕ: Если запрос идет к Google Скриптам, отдаем его сети как есть
+  if (url.origin.includes('script.google.com') || url.origin.includes('script.googleusercontent.com')) {
+    return; // SW полностью игнорирует этот запрос и не вызывает fetch внутри себя
+  }
+
+  // Перехватываем только запросы к Диску, содержащие наш токен
   if (url.origin === 'https://www.googleapis.com' && url.searchParams.has('token')) {
     event.respondWith(handleMedia(event.request, url));
-  } else {
-    event.respondWith(fetch(event.request));
   }
 });
 
 async function handleMedia(request, url) {
   const token = url.searchParams.get('token');
-  url.searchParams.delete('token'); // Убираем токен из строки URL
+  url.searchParams.delete('token'); 
 
   const headers = new Headers(request.headers);
   if (token) headers.set('Authorization', `Bearer ${token}`);
