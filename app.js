@@ -30,14 +30,13 @@ window.addEventListener('load', async () => {
   initLibrary();
 });
 
-// ЗАГРУЗКА БИБЛИОТЕКИ КНИГ ИЗ БЭКЕНДА
-async function initLibrary() {
-  try {
-    const res = await fetch(`${API_URL}?action=books`, { mode: 'cors' });
-    const data = await res.json();
+// ЗАГРУЗКА БИБЛИОТЕКИ КНИГ ИЗ БЭКЕНДА ЧЕРЕЗ JSONP (ОБХОД CORS)
+function initLibrary() {
+  // Создаем глобальную функцию-колбэк, которую вызовет Google Скрипт
+  window.handleGASResponse = function(data) {
     document.getElementById('loading-overlay').style.display = 'none';
     
-    if (!data.success) {
+    if (!data || !data.success) {
       libraryList.innerHTML = 'Ошибка загрузки данных.';
       return;
     }
@@ -48,9 +47,21 @@ async function initLibrary() {
     
     booksDataGlobal = data.books;
     renderLibrary(booksDataGlobal);
-  } catch (e) {
-    document.getElementById('loading-overlay').innerText = 'Ошибка сети/CORS: ' + e;
-  }
+    
+    // Удаляем временный тег из документа
+    const scriptTag = document.getElementById('gas-jsonp-script');
+    if (scriptTag) scriptTag.remove();
+  };
+
+  // Создаем и вставляем тег скрипта для обхода CORS
+  const script = document.createElement('script');
+  script.id = 'gas-jsonp-script';
+  script.src = `${API_URL}?action=books&callback=handleGASResponse`;
+  script.onerror = function() {
+    document.getElementById('loading-overlay').innerText = 'Ошибка сети/CORS при JSONP запросе';
+  };
+  
+  document.body.appendChild(script);
 }
 
 // РЕНДЕРИНГ СПИСКА КНИГ
