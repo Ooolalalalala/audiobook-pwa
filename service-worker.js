@@ -1,7 +1,6 @@
 const CACHE_NAME = 'audiobooks-pwa-v1';
 const GOOGLE_DRIVE_API_URL = 'https://www.googleapis.com/drive/v3/files/';
 
-// При установке воркера сразу активируем его
 self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
@@ -10,15 +9,15 @@ self.addEventListener('activate', (event) => {
   event.waitUntil(self.clients.claim());
 });
 
-// Перехват всех сетевых запросов приложения
+// ИЗОЛИРОВАННЫЙ ПЕРЕХВАТ ЗАПРОСОВ
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
-  // Проверяем, идет ли запрос к медиафайлам Google Drive
-  if (url.href.startsWith(GOOGLE_DRIVE_API_URL) && url.searchParams.get('alt') === 'media') {
+  // Обрабатываем ТОЛЬКО запросы к аудиофайлам Google Drive
+  if (url.origin === 'https://www.googleapis.com' && url.pathname.startsWith('/drive/v3/files') && url.searchParams.get('alt') === 'media') {
     event.respondWith(handleAudioRequest(event.request));
   } else {
-    // Для всех остальных системных файлов (html, css, js) используем обычную сеть
+    // Все остальные запросы (библиотека, стили, скрипты GAS) пропускаем без вмешательства SW
     event.respondWith(fetch(event.request));
   }
 });
@@ -26,21 +25,17 @@ self.addEventListener('fetch', (event) => {
 async function handleAudioRequest(request) {
   const url = new URL(request.url);
   const fileId = url.pathname.split('/').pop();
-  
-  // Извлекаем токен из параметров запроса, который передал app.js
   const token = url.searchParams.get('bearer_token');
 
-  // 1. ПРОВЕРКА ЛОКАЛЬНОГО ОФЛАЙН-КЭША
   const cache = await caches.open(CACHE_NAME);
   const cachedResponse = await cache.match(GOOGLE_DRIVE_API_URL + fileId + '?alt=media');
 
+  // Если файл в офлайн-кэше — отдаем локально
   if (cachedResponse) {
-    // Если файл полностью скачан для офлайна, отдаем его локально с поддержкой Range (перемотки)
     return handleRangeRequest(request, cachedResponse);
   }
 
-  // 2. ОНЛАЙН СТРИМИНГ С АВТО-АВТОРИЗАЦИЕЙ
-  // Создаем чистый запрос к API Google Drive без лишних параметров в URL
+  // Если файла нет — стримим из сети с авторизацией
   const cleanUrl = `${GOOGLE_DRIVE_API_URL}${fileId}?alt=media`;
   const headers = new Headers(request.headers);
   
@@ -58,7 +53,6 @@ async function handleAudioRequest(request) {
   try {
     const response = await fetch(modifiedRequest);
     if (!response.ok && response.status === 416) {
-      // Защита от сбоя диапазонов
       return new Response('', { status: 416, headers: response.headers });
     }
     return response;
@@ -67,7 +61,7 @@ async function handleAudioRequest(request) {
   }
 }
 
-// Эмуляция Range-запросов для файлов, которые воспроизводятся из локального офлайн-кэша
+// Эмуляция Range для локального кэша
 async function handleRangeRequest(request, cachedResponse) {
   const rangeHeader = request.headers.get('Range');
   if (!rangeHeader) return cachedResponse;
