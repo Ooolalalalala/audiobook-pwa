@@ -1,9 +1,8 @@
-// НАСТРОЙКИ: Сюда подставится ваш URL из Code.gs автоматически при генерации интерфейса
-const API_URL = "https://script.google.com/macros/s/AKfycbwb8FuX_EmDmyQg_O9YqLp6hu2vDNhtBnQ4eP50zg8Qf7IaRQcQ1hCFD0PX15X0pUc2kg/exec"; // Скрипт сам подставит нужный URL
-const AUTH_TOKEN = ""; // Токен инжектируется автоматически
+// НАСТРОЙКИ: Подставьте сюда ваш актуальный URL Макроса (Web App) из Google Apps Script
+const API_URL = "https://script.google.com/macros/s/AKfycbwb8FuX_EmDmyQg_O9YqLp6hu2vDNhtBnQ4eP50zg8Qf7IaRQcQ1hCFD0PX15X0pUc2kg/exec"; 
+const AUTH_TOKEN = ""; // Оставьте пустым, если авторизация идет внутри SW или не требуется явный токен
 
 const CACHE_NAME = 'audiobooks-pwa-v1';
-let currentBookId = null;
 let currentTrackId = null;
 let syncInterval = null;
 let booksDataGlobal = [];
@@ -21,7 +20,7 @@ const searchInput = document.getElementById('search-input');
 const syncStatus = document.getElementById('sync-status');
 const libraryList = document.getElementById('library-list');
 
-// ИНИЦИАЛИЗАЦИЯ PWA И РЕГИСТРАЦИЯ СЕРВИС-ВОРКЕРА
+// ИНИЦИАЛИЗАЦИЯ И РЕГИСТРАЦИЯ СЕРВИС-ВОРКЕРА
 window.addEventListener('load', async () => {
   if ('serviceWorker' in navigator) {
     try {
@@ -31,10 +30,11 @@ window.addEventListener('load', async () => {
   initLibrary();
 });
 
-// ЗАГРУЗКА БИБЛИОТЕКИ КНИГ
+// ЗАГРУЗКА БИБЛИОТЕКИ КНИГ ИЗ БЭКЕНДА
 async function initLibrary() {
   try {
-    const res = await fetch(`${API_URL}?action=getBooks`);
+    // Явно указываем cors режим, чтобы GAS пропустил запрос с GitHub Pages
+    const res = await fetch(`${API_URL}?action=books`, { mode: 'cors' });
     const data = await res.json();
     document.getElementById('loading-overlay').style.display = 'none';
     
@@ -46,20 +46,24 @@ async function initLibrary() {
     booksDataGlobal = data.books;
     renderLibrary(booksDataGlobal);
   } catch (e) {
-    document.getElementById('loading-overlay').innerText = 'Ошибка сети: ' + e;
+    document.getElementById('loading-overlay').innerText = 'Ошибка сети/CORS: ' + e;
   }
 }
 
-// РЕНДЕРИНГ КНИГ И ОПРЕДЕЛЕНИЕ ЛОКАЛЬНОГО СТАТУСА
+// РЕНДЕРИНГ СПИСКА КНИГ
 async function renderLibrary(books) {
   libraryList.innerHTML = '';
   const cache = await caches.open(CACHE_NAME);
+
+  if (books.length === 0) {
+    libraryList.innerHTML = 'Ничего не найдено.';
+    return;
+  }
 
   for (let book of books) {
     const card = document.createElement('div');
     card.className = 'book-card';
     
-    // Проверяем, скачана ли вся книга локально
     let isBookLocal = true;
     for (let track of book.tracks) {
       const match = await cache.match(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`);
@@ -68,7 +72,7 @@ async function renderLibrary(books) {
 
     card.innerHTML = `
       <div class="book-header">
-        <div class="book-cover-container" id="cov-${book.folderId}">📋</div>
+        <div class="book-cover-container" id="cov-${book.folderId}">📘</div>
         <div class="book-title-block">
           <h4>${book.folderName}</h4>
           <button class="btn-download-book ${isBookLocal ? 'downloaded' : ''}" data-folderid="${book.folderId}">
@@ -92,20 +96,17 @@ async function renderLibrary(books) {
     libraryList.appendChild(card);
     if (book.coverId) loadSecureCover(book.coverId, `cov-${book.folderId}`);
 
-    // Обновляем плашки треков
     for (let track of book.tracks) {
       const isTrackLocal = await cache.match(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`);
       if (isTrackLocal) document.getElementById(`badge-${track.id}`).innerHTML = '<span class="local-badge">офлайн</span>';
     }
 
-    // Кнопка скачивания книги
     card.querySelector('.btn-download-book').addEventListener('click', function(e) {
       e.stopPropagation();
       downloadWholeBook(book, this);
     });
   }
 
-  // Навешивание событий на клик по треку
   document.querySelectorAll('.track-item').forEach(item => {
     item.addEventListener('click', function() {
       const trackId = this.getAttribute('data-trackid');
@@ -116,7 +117,7 @@ async function renderLibrary(books) {
   });
 }
 
-// СКРИПТ СКАЧИВАНИЯ КНИГИ ДЛЯ ОФЛАЙНА
+// СКАЧИВАНИЕ КНИГИ В ОФЛАЙН КЭШ
 async function downloadWholeBook(book, buttonElement) {
   if (buttonElement.classList.contains('downloaded')) return;
   buttonElement.innerText = 'Скачивание...';
@@ -135,11 +136,11 @@ async function downloadWholeBook(book, buttonElement) {
     buttonElement.innerText = '✓ Скачано';
     buttonElement.classList.add('downloaded');
   } catch (e) {
-    buttonElement.innerText = 'Ошибка скачивания';
+    buttonElement.innerText = 'Ошибка';
   }
 }
 
-// ЗАГРУЗКА И КЭШИРОВАНИЕ ОБЛОЖЕК
+// ЗАГРУЗКА ОБЛОЖКИ КНИГИ
 async function loadSecureCover(fileId, elementId) {
   const container = document.getElementById(elementId);
   try {
@@ -147,56 +148,70 @@ async function loadSecureCover(fileId, elementId) {
       headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
     });
     const blob = await res.blob();
-    container.innerHTML = `<img src="${URL.createObjectURL(blob)}" />`;
+    container.innerHTML = `<img src="${URL.createObjectURL(blob)}" style="width:100%;height:100%;object-fit:cover;" />`;
   } catch (e) { container.innerText = '📕'; }
 }
 
-// ЗАПУСК ВОСПРОИЗВЕДЕНИЯ ТРЕКА
+// БЕЗОПАСНЫЙ ЗАПУСК АУДИО БЕЗ ABORT_ERROR
+async function safePlay() {
+  try {
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      await playPromise;
+      btnPlayPause.innerText = '⏸';
+    }
+  } catch (error) {
+    // Игнорируем системные прерывания движка браузера Chrome
+    console.log("Play interrupted or stream loading skipped.");
+  }
+}
+
+// ЗАПУСК ВОСПРОИЗВЕДЕНИЯ ТРЕКА С ПРОВЕРКОЙ ПОЗИЦИИ
 async function playTrack(trackId, bookTitle, trackName) {
   currentTrackId = trackId;
   document.getElementById('current-title').innerText = bookTitle;
   document.getElementById('current-track-name').innerText = trackName;
 
-  // Сервис воркер сам подменит на офлайн-версию, если она есть в кэше
+  // Очищаем и останавливаем старый поток перед сменой src
+  audio.pause();
   audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&bearer_token=${AUTH_TOKEN}`;
+  audio.load();
   
   syncStatus.innerText = 'Синхронизация...';
-  audio.pause();
 
   try {
-    // Получаем прошлый прогресс трека
-    const res = await fetch(`${API_URL}?action=getProgress&bookId=${trackId}`);
+    // Запрашиваем прошлую позицию у доработанного Code.gs
+    const res = await fetch(`${API_URL}?action=progress&bookId=${trackId}`, { mode: 'cors' });
     const data = await res.json();
     if (data.success && data.position > 0) {
       audio.currentTime = data.position;
     }
   } catch (e) {}
 
-  audio.play();
-  btnPlayPause.innerText = '⏸';
+  await safePlay();
   startCloudSync();
 }
 
-// КНОПКИ УПРАВЛЕНИЯ ПЛЕЕРОМ
-btnPlayPause.addEventListener('click', () => {
+// ОБРАБОТКА КЛИКА PLAY/PAUSE
+btnPlayPause.addEventListener('click', async () => {
   if (audio.paused) {
-    audio.play();
-    btnPlayPause.innerText = '⏸';
+    await safePlay();
   } else {
     audio.pause();
     btnPlayPause.innerText = '▶';
   }
 });
 
+// КНОПКИ ПЕРЕМОТКИ НА 10 СЕКУНД
 btnSkipBack.addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
 btnSkipForward.addEventListener('click', () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10); });
 
-// СКОРОСТЬ ВОСПРОИЗВЕДЕНИЯ
+// СКОРОСТЬ
 selectSpeed.addEventListener('change', (e) => { audio.playbackRate = parseFloat(e.target.value); });
 
-// ОБНОВЛЕНИЕ ТАЙМЛАЙНА ПЛЕЕРА
+// ТАЙМЛАЙН
 audio.addEventListener('timeupdate', () => {
-  if (isNaN(audio.duration)) return;
+  if (isNaN(audio.duration) || audio.duration === 0) return;
   const current = audio.currentTime;
   const total = audio.duration;
   
@@ -216,21 +231,21 @@ function formatTime(secs) {
   return m + ":" + (s < 10 ? "0" : "") + s;
 }
 
-// ЖЕСТКАЯ ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ РАЗ В 30 СЕКУНД (ПРИ НАЛИЧИИ ИНТЕРНЕТА)
+// СИНХРОНИЗАЦИЯ ПРОГРЕССА С СЕРВЕРОМ РАЗ В 30 СЕКУНД
 function startCloudSync() {
   if (syncInterval) clearInterval(syncInterval);
   syncInterval = setInterval(async () => {
     if (!currentTrackId || audio.paused || !navigator.onLine) return;
     const pos = audio.currentTime;
     try {
-      await fetch(`${API_URL}?action=saveProgress&bookId=${currentTrackId}&position=${pos}`);
+      await fetch(`${API_URL}?action=progress&bookId=${currentTrackId}&position=${pos}`, { mode: 'cors' });
       syncStatus.innerText = 'Синхронизировано';
       setTimeout(() => { if(syncStatus.innerText === 'Синхронизировано') syncStatus.innerText = 'ОК'; }, 2000);
     } catch (e) { syncStatus.innerText = 'Офлайн режим'; }
   }, 30000);
 }
 
-// ИНТЕРАКТИВНЫЙ ПОИСК ПО НАЗВАНИЮ КНИГИ
+// ФИЛЬТР ПОИСКА
 searchInput.addEventListener('input', (e) => {
   const query = e.target.value.toLowerCase();
   const filteredBooks = booksDataGlobal.filter(book => book.folderName.toLowerCase().includes(query));
