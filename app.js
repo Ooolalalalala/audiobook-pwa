@@ -1,380 +1,238 @@
-const API_URL = "https://script.google.com/macros/s/AKfycby6Ux7wMKr1oLZPaRyh0ou7rEdAY8Jwre56XJeL1omrj1KKJtXpeBsbm7h6LBOoELPKiA/exec";
+// НАСТРОЙКИ: Сюда подставится ваш URL из Code.gs автоматически при генерации интерфейса
+const API_URL = "https://script.google.com/macros/s/AKfycbwb8FuX_EmDmyQg_O9YqLp6hu2vDNhtBnQ4eP50zg8Qf7IaRQcQ1hCFD0PX15X0pUc2kg/exec"; // Скрипт сам подставит нужный URL
+const AUTH_TOKEN = ""; // Токен инжектируется автоматически
 
-let books = [];
-let progress = {};
-let currentBook = null;
-let currentChapterIndex = 0;
-let saveTimer = null;
-let db = null;
+const CACHE_NAME = 'audiobooks-pwa-v1';
+let currentBookId = null;
+let currentTrackId = null;
+let syncInterval = null;
+let booksDataGlobal = [];
 
-const booksBox = document.getElementById("books");
-const chaptersBox = document.getElementById("chapters");
-const playerBox = document.getElementById("playerBox");
-const audio = document.getElementById("audio");
+// ЭЛЕМЕНТЫ ИНТЕРФЕЙСА
+const audio = document.getElementById('main-audio');
+const btnPlayPause = document.getElementById('btn-play-pause');
+const btnSkipBack = document.getElementById('btn-skip-back');
+const btnSkipForward = document.getElementById('btn-skip-forward');
+const progressBar = document.getElementById('player-progress');
+const timeCurrent = document.getElementById('time-current');
+const timeTotal = document.getElementById('time-total');
+const selectSpeed = document.getElementById('select-speed');
+const searchInput = document.getElementById('search-input');
+const syncStatus = document.getElementById('sync-status');
+const libraryList = document.getElementById('library-list');
 
-const cover = document.getElementById("cover");
-const bookTitle = document.getElementById("bookTitle");
-const chapterTitle = document.getElementById("chapterTitle");
-
-document.getElementById("refreshBtn").onclick = refresh;
-document.getElementById("prevBtn").onclick = prevChapter;
-document.getElementById("nextBtn").onclick = nextChapter;
-document.getElementById("backBtn").onclick = () => audio.currentTime = Math.max(0, audio.currentTime - 20);
-document.getElementById("forwardBtn").onclick = () => audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 20);
-
-document.getElementById("speed").onchange = e => {
-  audio.playbackRate = Number(e.target.value);
-  saveCurrentProgress();
-};
-
-document.getElementById("downloadFileBtn").onclick = downloadCurrentFile;
-document.getElementById("downloadBookBtn").onclick = downloadCurrentBook;
-
-audio.addEventListener("timeupdate", () => {
-  saveLocalProgress();
-});
-
-audio.addEventListener("ended", () => {
-  nextChapter();
-});
-
-window.addEventListener("online", () => {
-  saveCurrentProgress();
-});
-
-if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("service-worker.js");
-}
-
-function initDB() {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open("AudiobooksOfflineDB", 1);
-    request.onupgradeneeded = e => {
-      const database = e.target.result;
-      if (!database.objectStoreNames.contains("files")) {
-        database.createObjectStore("files", { keyPath: "id" });
-      }
-    };
-    request.onsuccess = e => {
-      db = e.target.result;
-      resolve();
-    };
-    request.onerror = e => reject(e.target.error);
-  });
-}
-
-function saveFileToStorage(id, blob) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("files", "readwrite");
-    const store = tx.objectStore("files");
-    store.put({ id: id, blob: blob });
-    tx.oncomplete = () => resolve();
-    tx.onerror = e => reject(e.target.error);
-  });
-}
-
-function getFileFromStorage(id) {
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction("files", "readonly");
-    const store = tx.objectStore("files");
-    const request = store.get(id);
-    request.onsuccess = () => resolve(request.result ? request.result.blob : null);
-    request.onerror = e => reject(e.target.error);
-  });
-}
-
-// Конвертер Base64 в Blob
-function base64ToBlob(base64, mimeType) {
-  const byteCharacters = atob(base64);
-  const byteNumbers = new Array(byteCharacters.length);
-  for (let i = 0; i < byteCharacters.length; i++) {
-    byteNumbers[i] = byteCharacters.charCodeAt(i);
+// ИНИЦИАЛИЗАЦИЯ PWA И РЕГИСТРАЦИЯ СЕРВИС-ВОРКЕРА
+window.addEventListener('load', async () => {
+  if ('serviceWorker' in navigator) {
+    try {
+      await navigator.serviceWorker.register('service-worker.js');
+    } catch (e) { console.error('SW registration failed', e); }
   }
-  const byteArray = new Uint8Array(byteNumbers);
-  return new Blob([byteArray], { type: mimeType });
-}
+  initLibrary();
+});
 
-// Вспомогательная функция для скачивания файла по сети и конвертации
-async function fetchFileAsBlob(url) {
-  const res = await fetch(url);
-  const data = await res.json();
-  if (!data.ok) throw new Error(data.error || "Ошибка загрузки файла с сервера");
-  return base64ToBlob(data.bytes, data.mimeType);
-}
-
-async function init() {
-  await initDB();
-  loadLocalProgress();
-  await refresh();
-  startAutoSave();
-}
-
-init();
-
-async function refresh() {
+// ЗАГРУЗКА БИБЛИОТЕКИ КНИГ
+async function initLibrary() {
   try {
-    const booksData = await api("books");
-    if (booksData && booksData.ok) {
-      books = booksData.books;
-      localStorage.setItem("audiobook_cache_books", JSON.stringify(books));
+    const res = await fetch(`${API_URL}?action=getBooks`);
+    const data = await res.json();
+    document.getElementById('loading-overlay').style.display = 'none';
+    
+    if (!data.success) {
+      libraryList.innerHTML = 'Ошибка загрузки данных.';
+      return;
     }
+    
+    booksDataGlobal = data.books;
+    renderLibrary(booksDataGlobal);
   } catch (e) {
-    books = JSON.parse(localStorage.getItem("audiobook_cache_books") || "[]");
+    document.getElementById('loading-overlay').innerText = 'Ошибка сети: ' + e;
   }
-
-  try {
-    const progressData = await api("progress");
-    if (progressData && progressData.ok) {
-      progress = mergeProgress(progress, progressData.progress);
-    }
-  } catch (e) {
-    console.log("Офлайн: прогресс не синхронизирован");
-  }
-
-  renderBooks();
 }
 
-function renderBooks() {
-  booksBox.innerHTML = "";
-  books.forEach(book => {
-    const div = document.createElement("div");
-    div.className = "book";
-    div.innerHTML = `
-      ${book.cover ? `<img src="" alt="" data-id="${book.id}">` : `<div class="noCover">Нет обложки</div>`}
-      <div>
-        <h2>${escapeHtml(book.title)}</h2>
-        <p>${book.chapters.length} файлов</p>
+// РЕНДЕРИНГ КНИГ И ОПРЕДЕЛЕНИЕ ЛОКАЛЬНОГО СТАТУСА
+async function renderLibrary(books) {
+  libraryList.innerHTML = '';
+  const cache = await caches.open(CACHE_NAME);
+
+  for (let book of books) {
+    const card = document.createElement('div');
+    card.className = 'book-card';
+    
+    // Проверяем, скачана ли вся книга локально
+    let isBookLocal = true;
+    for (let track of book.tracks) {
+      const match = await cache.match(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`);
+      if (!match) { isBookLocal = false; break; }
+    }
+
+    card.innerHTML = `
+      <div class="book-header">
+        <div class="book-cover-container" id="cov-${book.folderId}">📋</div>
+        <div class="book-title-block">
+          <h4>${book.folderName}</h4>
+          <button class="btn-download-book ${isBookLocal ? 'downloaded' : ''}" data-folderid="${book.folderId}">
+            ${isBookLocal ? '✓ Скачано' : '⬇ Скачать книгу'}
+          </button>
+        </div>
+      </div>
+      <div class="tracks-list">
+        ${book.tracks.map(t => `
+          <div class="track-item" data-trackid="${t.id}" data-foldername="${book.folderName}">
+            <span class="track-name">${t.name}</span>
+            <div class="track-meta">
+              <span class="track-dur">${Math.floor(t.duration / 60)} мин</span>
+              <span class="local-status-badge" id="badge-${t.id}"></span>
+            </div>
+          </div>
+        `).join('')}
       </div>
     `;
-    div.onclick = () => openBook(book.id);
-    booksBox.appendChild(div);
 
-    if (book.cover) {
-      loadCoverImage(book.id, book.cover);
-    }
-  });
-}
+    libraryList.appendChild(card);
+    if (book.coverId) loadSecureCover(book.coverId, `cov-${book.folderId}`);
 
-async function loadCoverImage(bookId, coverUrl) {
-  try {
-    let blob = await getFileFromStorage(bookId);
-    if (!blob) {
-      blob = await fetchFileAsBlob(coverUrl);
-      await saveFileToStorage(bookId, blob);
-    }
-    const imgEl = document.querySelector(`img[data-id="${bookId}"]`);
-    if (imgEl) imgEl.src = URL.createObjectURL(blob);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-function openBook(bookId) {
-  currentBook = books.find(b => b.id === bookId);
-  if (!currentBook) return;
-
-  const saved = progress[currentBook.id];
-  currentChapterIndex = 0;
-
-  if (saved) {
-    const idx = currentBook.chapters.findIndex(c => c.id === saved.chapterId);
-    if (idx >= 0) currentChapterIndex = idx;
-    if (saved.speed) {
-      document.getElementById("speed").value = saved.speed;
-    }
-  }
-
-  playerBox.classList.remove("hidden");
-  
-  getFileFromStorage(currentBook.id).then(blob => {
-    if (blob) cover.src = URL.createObjectURL(blob);
-  });
-
-  bookTitle.textContent = currentBook.title;
-  renderChapters();
-  loadChapter(currentChapterIndex, true);
-}
-
-function renderChapters() {
-  chaptersBox.innerHTML = "";
-  currentBook.chapters.forEach((chapter, index) => {
-    const btn = document.createElement("button");
-    btn.textContent = chapter.name;
-    btn.className = index === currentChapterIndex ? "active" : "";
-    btn.onclick = () => loadChapter(index, true);
-    chaptersBox.appendChild(btn);
-  });
-}
-
-async function loadChapter(index, restorePosition) {
-  if (!currentBook || !currentBook.chapters[index]) return;
-
-  currentChapterIndex = index;
-  const chapter = currentBook.chapters[index];
-  chapterTitle.textContent = "Загрузка файла...";
-
-  try {
-    let blob = await getFileFromStorage(chapter.id);
-    
-    if (!blob) {
-      blob = await fetchFileAsBlob(chapter.url);
+    // Обновляем плашки треков
+    for (let track of book.tracks) {
+      const isTrackLocal = await cache.match(`https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`);
+      if (isTrackLocal) document.getElementById(`badge-${track.id}`).innerHTML = '<span class="local-badge">офлайн</span>';
     }
 
-    audio.src = URL.createObjectURL(blob);
-    chapterTitle.textContent = chapter.name;
-
-    const speed = Number(document.getElementById("speed").value);
-    audio.playbackRate = speed;
-
-    audio.onloadedmetadata = () => {
-      if (restorePosition) {
-        const saved = progress[currentBook.id];
-        if (saved && saved.chapterId === chapter.id && saved.time) {
-          audio.currentTime = Math.min(saved.time, audio.duration || saved.time);
-        }
-      }
-    };
-  } catch (err) {
-    chapterTitle.textContent = "Ошибка загрузки: " + chapter.name;
-    console.error(err);
-  }
-
-  renderChapters();
-}
-
-function nextChapter() {
-  if (!currentBook) return;
-  if (currentChapterIndex < currentBook.chapters.length - 1) {
-    loadChapter(currentChapterIndex + 1, true);
-    audio.play();
-  }
-}
-
-function prevChapter() {
-  if (!currentBook) return;
-  if (currentChapterIndex > 0) {
-    loadChapter(currentChapterIndex - 1, true);
-    audio.play();
-  }
-}
-
-function saveLocalProgress() {
-  if (!currentBook || !currentBook.chapters[currentChapterIndex]) return;
-
-  const chapter = currentBook.chapters[currentChapterIndex];
-
-  progress[currentBook.id] = {
-    bookId: currentBook.id,
-    bookTitle: currentBook.title,
-    chapterId: chapter.id,
-    chapterName: chapter.name,
-    chapterIndex: currentChapterIndex,
-    time: audio.currentTime || 0,
-    duration: audio.duration || 0,
-    speed: Number(document.getElementById("speed").value),
-    updatedAt: Date.now()
-  };
-
-  localStorage.setItem("audiobook_progress", JSON.stringify(progress));
-}
-
-async function saveCurrentProgress() {
-  saveLocalProgress();
-  if (!navigator.onLine) return;
-  try {
-    await api("saveProgress", progress);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-function startAutoSave() {
-  if (saveTimer) clearInterval(saveTimer);
-  saveTimer = setInterval(saveCurrentProgress, 20000);
-}
-
-function loadLocalProgress() {
-  try {
-    progress = JSON.parse(localStorage.getItem("audiobook_progress") || "{}");
-  } catch {
-    progress = {};
-  }
-}
-
-function mergeProgress(local, remote) {
-  const result = { ...remote };
-  for (const key in local) {
-    if (!result[key] || local[key].updatedAt > result[key].updatedAt) {
-      result[key] = local[key];
-    }
-  }
-  localStorage.setItem("audiobook_progress", JSON.stringify(result));
-  return result;
-}
-
-async function downloadCurrentFile() {
-  if (!currentBook) return;
-  const chapter = currentBook.chapters[currentChapterIndex];
-  const btn = document.getElementById("downloadFileBtn");
-  
-  btn.textContent = "Скачивание...";
-  try {
-    let blob = await getFileFromStorage(chapter.id);
-    if (!blob) {
-      blob = await fetchFileAsBlob(chapter.url);
-      await saveFileToStorage(chapter.id, blob);
-    }
-    btn.textContent = "Готово (Офлайн)";
-    setTimeout(() => btn.textContent = "Скачать файл", 2000);
-  } catch (e) {
-    btn.textContent = "Ошибка";
-    setTimeout(() => btn.textContent = "Скачать файл", 2000);
-  }
-}
-
-async function downloadCurrentBook() {
-  if (!currentBook) return;
-  const btn = document.getElementById("downloadBookBtn");
-  const originalText = btn.textContent;
-
-  for (let i = 0; i < currentBook.chapters.length; i++) {
-    const chapter = currentBook.chapters[i];
-    btn.textContent = `Скачано ${i}/${currentBook.chapters.length}`;
-    try {
-      let blob = await getFileFromStorage(chapter.id);
-      if (!blob) {
-        blob = await fetchFileAsBlob(chapter.url);
-        await saveFileToStorage(chapter.id, blob);
-      }
-    } catch (e) {
-      console.error(e);
-    }
-  }
-  btn.textContent = "Вся книга в офлайне!";
-  setTimeout(() => btn.textContent = originalText, 3000);
-}
-
-async function api(action, bodyData = null) {
-  const url = new URL(API_URL);
-  if (bodyData) {
-    const response = await fetch(url.toString(), {
-      method: "POST",
-      body: JSON.stringify(bodyData)
+    // Кнопка скачивания книги
+    card.querySelector('.btn-download-book').addEventListener('click', function(e) {
+      e.stopPropagation();
+      downloadWholeBook(book, this);
     });
-    return await response.json();
-  } else {
-    url.searchParams.set("action", action);
-    const response = await fetch(url.toString());
-    return await response.json();
+  }
+
+  // Навешивание событий на клик по треку
+  document.querySelectorAll('.track-item').forEach(item => {
+    item.addEventListener('click', function() {
+      const trackId = this.getAttribute('data-trackid');
+      const bookTitle = this.getAttribute('data-foldername');
+      const trackName = this.querySelector('.track-name').innerText;
+      playTrack(trackId, bookTitle, trackName);
+    });
+  });
+}
+
+// СКРИПТ СКАЧИВАНИЯ КНИГИ ДЛЯ ОФЛАЙНА
+async function downloadWholeBook(book, buttonElement) {
+  if (buttonElement.classList.contains('downloaded')) return;
+  buttonElement.innerText = 'Скачивание...';
+  const cache = await caches.open(CACHE_NAME);
+
+  try {
+    for (let track of book.tracks) {
+      const url = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`;
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` } });
+      if (response.ok) {
+        await cache.put(url, response.clone());
+        const badge = document.getElementById(`badge-${track.id}`);
+        if (badge) badge.innerHTML = '<span class="local-badge">офлайн</span>';
+      }
+    }
+    buttonElement.innerText = '✓ Скачано';
+    buttonElement.classList.add('downloaded');
+  } catch (e) {
+    buttonElement.innerText = 'Ошибка скачивания';
   }
 }
 
-function escapeHtml(text) {
-  return String(text).replace(/[&<>"']/g, s => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#039;"
-  }[s]));
+// ЗАГРУЗКА И КЭШИРОВАНИЕ ОБЛОЖЕК
+async function loadSecureCover(fileId, elementId) {
+  const container = document.getElementById(elementId);
+  try {
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+    });
+    const blob = await res.blob();
+    container.innerHTML = `<img src="${URL.createObjectURL(blob)}" />`;
+  } catch (e) { container.innerText = '📕'; }
 }
+
+// ЗАПУСК ВОСПРОИЗВЕДЕНИЯ ТРЕКА
+async function playTrack(trackId, bookTitle, trackName) {
+  currentTrackId = trackId;
+  document.getElementById('current-title').innerText = bookTitle;
+  document.getElementById('current-track-name').innerText = trackName;
+
+  // Сервис воркер сам подменит на офлайн-версию, если она есть в кэше
+  audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&bearer_token=${AUTH_TOKEN}`;
+  
+  syncStatus.innerText = 'Синхронизация...';
+  audio.pause();
+
+  try {
+    // Получаем прошлый прогресс трека
+    const res = await fetch(`${API_URL}?action=getProgress&bookId=${trackId}`);
+    const data = await res.json();
+    if (data.success && data.position > 0) {
+      audio.currentTime = data.position;
+    }
+  } catch (e) {}
+
+  audio.play();
+  btnPlayPause.innerText = '⏸';
+  startCloudSync();
+}
+
+// КНОПКИ УПРАВЛЕНИЯ ПЛЕЕРОМ
+btnPlayPause.addEventListener('click', () => {
+  if (audio.paused) {
+    audio.play();
+    btnPlayPause.innerText = '⏸';
+  } else {
+    audio.pause();
+    btnPlayPause.innerText = '▶';
+  }
+});
+
+btnSkipBack.addEventListener('click', () => { audio.currentTime = Math.max(0, audio.currentTime - 10); });
+btnSkipForward.addEventListener('click', () => { audio.currentTime = Math.min(audio.duration || 0, audio.currentTime + 10); });
+
+// СКОРОСТЬ ВОСПРОИЗВЕДЕНИЯ
+selectSpeed.addEventListener('change', (e) => { audio.playbackRate = parseFloat(e.target.value); });
+
+// ОБНОВЛЕНИЕ ТАЙМЛАЙНА ПЛЕЕРА
+audio.addEventListener('timeupdate', () => {
+  if (isNaN(audio.duration)) return;
+  const current = audio.currentTime;
+  const total = audio.duration;
+  
+  progressBar.value = (current / total) * 100;
+  timeCurrent.innerText = formatTime(current);
+  timeTotal.innerText = formatTime(total);
+});
+
+progressBar.addEventListener('input', (e) => {
+  if (isNaN(audio.duration)) return;
+  audio.currentTime = (e.target.value / 100) * audio.duration;
+});
+
+function formatTime(secs) {
+  const m = Math.floor(secs / 60);
+  const s = Math.floor(secs % 60);
+  return m + ":" + (s < 10 ? "0" : "") + s;
+}
+
+// ЖЕСТКАЯ ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ РАЗ В 30 СЕКУНД (ПРИ НАЛИЧИИ ИНТЕРНЕТА)
+function startCloudSync() {
+  if (syncInterval) clearInterval(syncInterval);
+  syncInterval = setInterval(async () => {
+    if (!currentTrackId || audio.paused || !navigator.onLine) return;
+    const pos = audio.currentTime;
+    try {
+      await fetch(`${API_URL}?action=saveProgress&bookId=${currentTrackId}&position=${pos}`);
+      syncStatus.innerText = 'Синхронизировано';
+      setTimeout(() => { if(syncStatus.innerText === 'Синхронизировано') syncStatus.innerText = 'ОК'; }, 2000);
+    } catch (e) { syncStatus.innerText = 'Офлайн режим'; }
+  }, 30000);
+}
+
+// ИНТЕРАКТИВНЫЙ ПОИСК ПО НАЗВАНИЮ КНИГИ
+searchInput.addEventListener('input', (e) => {
+  const query = e.target.value.toLowerCase();
+  const filteredBooks = booksDataGlobal.filter(book => book.folderName.toLowerCase().includes(query));
+  renderLibrary(filteredBooks);
+});
