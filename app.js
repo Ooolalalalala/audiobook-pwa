@@ -1,11 +1,11 @@
 // НАСТРОЙКИ: Подставьте сюда ваш актуальный URL Макроса (Web App) из Google Apps Script
-const API_URL = "https://script.google.com/macros/s/AKfycbwb8FuX_EmDmyQg_O9YqLp6hu2vDNhtBnQ4eP50zg8Qf7IaRQcQ1hCFD0PX15X0pUc2kg/exec"; 
-const AUTH_TOKEN = ""; // Оставьте пустым, если авторизация идет внутри SW или не требуется явный токен
+const API_URL = "https://script.google.com/macros/s/AKfycby6Ux7wMKr1oLZPaRyh0ou7rEdAY8Jwre56XJeL1omrj1KKJtXpeBsbm7h6LBOoELPKiA/exec"; 
 
 const CACHE_NAME = 'audiobooks-pwa-v1';
 let currentTrackId = null;
 let syncInterval = null;
 let booksDataGlobal = [];
+window.AUTH_TOKEN_DYNAMIC = ""; // Токен будет получен автоматически из бэкенда
 
 // ЭЛЕМЕНТЫ ИНТЕРФЕЙСА
 const audio = document.getElementById('main-audio');
@@ -33,7 +33,6 @@ window.addEventListener('load', async () => {
 // ЗАГРУЗКА БИБЛИОТЕКИ КНИГ ИЗ БЭКЕНДА
 async function initLibrary() {
   try {
-    // Явно указываем cors режим, чтобы GAS пропустил запрос с GitHub Pages
     const res = await fetch(`${API_URL}?action=books`, { mode: 'cors' });
     const data = await res.json();
     document.getElementById('loading-overlay').style.display = 'none';
@@ -41,6 +40,11 @@ async function initLibrary() {
     if (!data.success) {
       libraryList.innerHTML = 'Ошибка загрузки данных.';
       return;
+    }
+    
+    // Безопасно сохраняем токен авторизации, пришедший от Google скрипта
+    if (data.token) {
+      window.AUTH_TOKEN_DYNAMIC = data.token;
     }
     
     booksDataGlobal = data.books;
@@ -117,7 +121,7 @@ async function renderLibrary(books) {
   });
 }
 
-// СКАЧИВАНИЕ КНИГИ В ОФЛАЙН КЭШ
+// СКАЧИВАНИЕ КНИГИ В ОФЛАЙН КЭШ С ИСПОЛЬЗОВАНИЕМ ДИНАМИЧЕСКОГО ТОКЕНА
 async function downloadWholeBook(book, buttonElement) {
   if (buttonElement.classList.contains('downloaded')) return;
   buttonElement.innerText = 'Скачивание...';
@@ -126,7 +130,7 @@ async function downloadWholeBook(book, buttonElement) {
   try {
     for (let track of book.tracks) {
       const url = `https://www.googleapis.com/drive/v3/files/${track.id}?alt=media`;
-      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` } });
+      const response = await fetch(url, { headers: { 'Authorization': `Bearer ${window.AUTH_TOKEN_DYNAMIC}` } });
       if (response.ok) {
         await cache.put(url, response.clone());
         const badge = document.getElementById(`badge-${track.id}`);
@@ -145,7 +149,7 @@ async function loadSecureCover(fileId, elementId) {
   const container = document.getElementById(elementId);
   try {
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
-      headers: { 'Authorization': `Bearer ${AUTH_TOKEN}` }
+      headers: { 'Authorization': `Bearer ${window.AUTH_TOKEN_DYNAMIC}` }
     });
     const blob = await res.blob();
     container.innerHTML = `<img src="${URL.createObjectURL(blob)}" style="width:100%;height:100%;object-fit:cover;" />`;
@@ -161,7 +165,6 @@ async function safePlay() {
       btnPlayPause.innerText = '⏸';
     }
   } catch (error) {
-    // Игнорируем системные прерывания движка браузера Chrome
     console.log("Play interrupted or stream loading skipped.");
   }
 }
@@ -172,15 +175,14 @@ async function playTrack(trackId, bookTitle, trackName) {
   document.getElementById('current-title').innerText = bookTitle;
   document.getElementById('current-track-name').innerText = trackName;
 
-  // Очищаем и останавливаем старый поток перед сменой src
+  // Сброс и жесткая остановка старого воспроизведения во избежание AbortError
   audio.pause();
-  audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&bearer_token=${AUTH_TOKEN}`;
+  audio.src = `https://www.googleapis.com/drive/v3/files/${trackId}?alt=media&bearer_token=${window.AUTH_TOKEN_DYNAMIC}`;
   audio.load();
   
   syncStatus.innerText = 'Синхронизация...';
 
   try {
-    // Запрашиваем прошлую позицию у доработанного Code.gs
     const res = await fetch(`${API_URL}?action=progress&bookId=${trackId}`, { mode: 'cors' });
     const data = await res.json();
     if (data.success && data.position > 0) {
