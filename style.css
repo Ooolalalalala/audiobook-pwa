@@ -1,136 +1,289 @@
+/* ОБЩИЕ СТИЛИ */
 * {
   box-sizing: border-box;
+  margin: 0;
+  padding: 0;
 }
 
 body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #111;
-  color: #eee;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  background-color: #f5f5f7;
+  color: #1d1d1f;
+  padding-top: 240px; /* Отступ сверху под фиксированный плеер */
 }
 
-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px;
-  background: #1c1c1c;
-  position: sticky;
+/* ФИКСИРОВАННАЯ ПАНЕЛЬ ПЛЕЕРА СВЕРХУ */
+.player-panel {
+  position: fixed;
   top: 0;
-  z-index: 10;
+  left: 0;
+  right: 0;
+  height: 220px;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+  z-index: 1000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
 }
 
-h1, h2, h3, p {
-  margin: 0 0 10px 0;
-}
-
-main {
-  padding: 16px;
-  max-width: 900px;
-  margin: auto;
-}
-
-button, select {
-  padding: 10px 14px;
-  border: none;
-  border-radius: 8px;
-  background: #333;
-  color: #fff;
-  font-size: 15px;
-  margin: 4px;
-}
-
-button:active {
-  transform: scale(0.98);
-}
-
-.book {
+.player-container {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 15px;
   display: flex;
-  gap: 14px;
-  padding: 12px;
-  margin-bottom: 12px;
-  background: #1f1f1f;
-  border-radius: 12px;
-  cursor: pointer;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.book img,
-#cover {
-  width: 90px;
-  height: 130px;
+/* ИНФОРМАЦИЯ О ТРЕКЕ */
+.now-playing {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.player-cover-img {
+  width: 50px;
+  height: 50px;
+  border-radius: 8px;
   object-fit: cover;
-  border-radius: 8px;
-  background: #333;
+  background-color: #e5e5ea;
 }
 
-.noCover {
-  width: 90px;
-  height: 130px;
-  border-radius: 8px;
-  background: #333;
+.track-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.track-info h3 {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.track-info p {
+  font-size: 13px;
+  color: #8e8e93;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+/* КНОПКИ УПРАВЛЕНИЯ */
+.controls-row {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 30px;
+}
+
+.btn-main-play {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  border: none;
+  background-color: #007aff;
+  color: white;
+  font-size: 22px;
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #aaa;
+  transition: transform 0.1s ease;
+}
+
+.btn-main-play:active {
+  transform: scale(0.95);
+}
+
+.btn-skip {
+  background: none;
+  border: none;
+  color: #007aff;
+  font-size: 16px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 10px;
+}
+
+/* ТАЙМЛАЙН */
+.timeline-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   font-size: 12px;
+  color: #8e8e93;
+  font-variant-numeric: tabular-nums;
+}
+
+.timeline-row input[type="range"] {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  background: #e5e5ea;
+  border-radius: 2px;
+  outline: none;
+}
+
+.timeline-row input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #007aff;
+  cursor: pointer;
+}
+
+/* СКОРОСТЬ И СИНХРОНИЗАЦИЯ */
+.meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 13px;
+}
+
+.speed-control select {
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid #d1d1d6;
+  background: white;
+  outline: none;
+}
+
+.status-badge {
+  color: #8e8e93;
+  font-weight: 500;
+}
+
+/* КОНТЕНТНАЯ ЗОНА */
+.content-area {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 15px;
+}
+
+.search-box input {
+  width: 100%;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px solid #d1d1d6;
+  background: white;
+  font-size: 15px;
+  outline: none;
+  margin-bottom: 15px;
+}
+
+#loading-overlay {
   text-align: center;
+  color: #8e8e93;
+  padding: 40px 0;
 }
 
-#playerBox {
-  margin-top: 24px;
-  padding: 16px;
-  background: #1c1c1c;
+/* КАРТОЧКИ КНИГ */
+.book-card {
+  background: white;
   border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 15px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
-#cover {
+.book-header {
+  display: flex;
+  gap: 15px;
   margin-bottom: 12px;
 }
 
-audio {
+.book-cover-container {
+  width: 70px;
+  height: 70px;
+  background: #e5e5ea;
+  border-radius: 6px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.book-cover-container img {
   width: 100%;
-  margin: 12px 0;
+  height: 100%;
+  object-fit: cover;
 }
 
-.controls,
-.download {
-  margin: 12px 0;
+.book-title-block {
+  flex: 1;
+  min-width: 0;
 }
 
-#chapters {
+.book-title-block h4 {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.btn-download-book {
+  background: #f2f2f7;
+  color: #007aff;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 15px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-download-book.downloaded {
+  background: #34c759;
+  color: white;
+}
+
+/* СПИСОК ТРЕКОВ КНИГИ */
+.tracks-list {
+  border-top: 1px solid #f2f2f7;
+  padding-top: 8px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
 }
 
-#chapters button {
-  text-align: left;
+.track-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  cursor: pointer;
+  border-bottom: 1px solid #f2f2f7;
 }
 
-#chapters button.active {
-  background: #555;
+.track-item:last-child {
+  border-bottom: none;
 }
 
-.hidden {
-  display: none;
+.track-name {
+  font-size: 14px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  padding-right: 10px;
 }
 
-@media (max-width: 600px) {
-  header {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
+.track-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #8e8e93;
+}
 
-  .book img,
-  #cover,
-  .noCover {
-    width: 70px;
-    height: 100px;
-  }
-
-  button, select {
-    width: 100%;
-    margin: 4px 0;
-  }
+.local-badge {
+  background: #34c759;
+  color: white;
+  padding: 20px 6px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: bold;
 }
